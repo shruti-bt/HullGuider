@@ -42,6 +42,8 @@ class DVLGuidedController(Node):
         # Example placeholders (replace with your estimator outputs)
         self.yaw_error = 0.0
         self.distance = 0.0
+        self.distance_valid = False      # 5th element of /hull/state
+        self.have_distance = False       # filtered_distance initialised from a real reading
 
 
         # R3.2 and R3.3
@@ -187,6 +189,8 @@ class DVLGuidedController(Node):
         """
         self.distance = msg.data[0]
         self.yaw_error = msg.data[1]
+        # Older hull nodes publish 4 values (no validity flag): treat as valid
+        self.distance_valid = len(msg.data) < 5 or msg.data[4] > 0.5
 
         # R2 addition: stable plane normal (global frame)
         self.plane_normal = np.array([
@@ -333,7 +337,18 @@ class DVLGuidedController(Node):
         )
         self.filtered_normal /= np.linalg.norm(self.filtered_normal)
 
-        # R2.3 filter distance to plane
+        # No valid distance (no beam on the hull for a while, or none yet): hold position
+        if not self.distance_valid:
+            self.get_logger().warn("Hull distance invalid: holding", throttle_duration_sec=1.0)
+            self.last_velocity = np.zeros(3)
+            yaw_hold = np.arctan2(-self.filtered_normal[1], -self.filtered_normal[0])
+            self.publish_setpoint(self.last_velocity, yaw_hold)
+            return
+
+        # R2.3 filter distance to plane (start from the first real reading, not from 0)
+        if not self.have_distance:
+            self.filtered_distance = self.distance
+            self.have_distance = True
         self.filtered_distance = (
             self.alpha_dist * self.distance +
             (1 - self.alpha_dist) * self.filtered_distance

@@ -23,6 +23,7 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 from dvl_msgs.msg import DVLDR, DVLBeam, DVL
 
 from hull_guider.utils.transformations import dvl_to_ros_transform, dvl_to_ros_transform_beams
+from hull_guider.core.hull_distance import HullDistanceEstimator
 
 import numpy as np
 import socket
@@ -132,6 +133,19 @@ class DVLHullEstimator(Node):
 
         self.use_top_beams_only = True
         self.top_beam_indices = [2, 3] # NOTE tune # 3 and 4 (1-based) ; 2 and 3 (0-based)
+
+        # Perpendicular distance to the hull (replaces compute_distance_2 + filter_distance).
+        # Hull angle from the two top-beam hit points, per-beam perpendicular distance,
+        # gate without lockout, small Kalman filter. See hull_guider/core/hull_distance.py
+        self.hull_dist = HullDistanceEstimator(
+            beam_dirs=self.get_beam_dirs(),
+            beam_pair=tuple(self.top_beam_indices),
+            gate=0.15,          # m, NOTE tune
+            max_rejects=3,      # accept a persistent change after this many rejections
+            timeout=1.0,        # s without a beam -> distance marked invalid
+        )
+        self.distance_valid = False
+        self.last_dist_time = None
         
 
         self.yaw_ref = None
@@ -216,7 +230,7 @@ class DVLHullEstimator(Node):
 
         self.position = np.array([0, 0, 0])
 
-        self.prev_dist = 0.0
+        self.prev_dist = None
 
         self.pose_time =  self.get_clock().now()
 
@@ -367,13 +381,25 @@ class DVLHullEstimator(Node):
         # DISTANCE FROM YAW ERROR
         # =========================
 
-        # dist = self.compute_distance_2(beams, yaw_err)
-        raw_dist = self.compute_distance_2(beams, yaw_err) # SR1
-        dist = self.filter_distance(raw_dist)
+        # Old: raw_dist = self.compute_distance_2(beams, yaw_err); dist = self.filter_distance(raw_dist)
+        # (assumed the DVL square to the hull; jumped when one top beam dropped out)
+        now = self.get_clock().now()
+        dt = 0.0 if self.last_dist_time is None else (now - self.last_dist_time).nanoseconds * 1e-9
+        self.last_dist_time = now
+        dist, self.distance_valid = self.hull_dist.update(
+            [b.distance for b in beams], [bool(b.valid) for b in beams], dt)
 
-        # could be none
-        if not dist:
-            dist = 0.01
+        info = self.hull_dist.last
+        raw = info.get("raw")
+        self.get_logger().info(
+            f"hull dist: raw={raw if raw is None else round(raw, 3)} "
+            f"beams={info.get('n_beams')} "
+            f"angle={np.degrees(self.hull_dist.angle or 0.0):.1f}deg "
+            f"rejected={info.get('rejected')} valid={self.distance_valid}")
+
+        # No 0.01 m fallback: before the first valid beam there is no distance at all
+        if dist is None:
+            dist = 0.0
 
         # -------------------------
         # HARD REJECTION
@@ -407,13 +433,18 @@ class DVLHullEstimator(Node):
             return dist, yaw_err, points, world_points
 
 
-        # Add delta translation along plane normal
-        delta_d = dist - self.prev_dist # Change in distance in the normal direction
-        p_pred = position_tang + delta_d * self.stable_plane_normal # TODO : weakness : dist is highly variable and is based on beam distances - may be noisy
+        # Add delta translation along plane normal (only from a valid, filtered distance)
+        if self.distance_valid:
+            if self.prev_dist is None:
+                self.prev_dist = dist
+            delta_d = dist - self.prev_dist # Change in distance in the normal direction
+            self.prev_dist = dist
+        else:
+            delta_d = 0.0
+        p_pred = position_tang + delta_d * self.stable_plane_normal
 
         # Set the latest position and dist variables
         self.position = p_pred
-        self.prev_dist = dist
         self.prev_yaw_err = yaw_err
 
         # =========================
@@ -632,6 +663,7 @@ class DVLHullEstimator(Node):
         return p_pred
     
     def filter_distance(self, dist):
+        # LEGACY: no longer used, replaced by HullDistanceEstimator (self.hull_dist)
         if not self.enable_distance_filter:
             return dist
 
@@ -914,6 +946,8 @@ class DVLHullEstimator(Node):
         return (R @ pts.T).T
     
     def compute_distance_2(self, beams, yaw_error):
+        # LEGACY: no longer used, replaced by HullDistanceEstimator (self.hull_dist).
+        # Note: Rz rotates about the boresight, so align_dir is always [0, 0, 1].
         # Computation done in DVL coordinate frame
         beam_dirs = self.get_beam_dirs()
 
@@ -1205,7 +1239,8 @@ class DVLHullEstimator(Node):
         nx, ny = plane_normal[0], plane_normal[1]
 
         msg = Float32MultiArray()
-        msg.data = [dist, yaw_error, float(nx), float(ny)] # R2 : updated with stable plane normal
+        # 5th element: 1.0 if the distance is valid, 0.0 if not (no beam for > timeout, or none yet)
+        msg.data = [float(dist), float(yaw_error), float(nx), float(ny), 1.0 if self.distance_valid else 0.0]
         self.pub.publish(msg)
     
     # ==============================

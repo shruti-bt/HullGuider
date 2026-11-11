@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1111" width="1200" height="1111" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/></marker>
+<pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#9ca3af" stroke-width="2"/></pattern></defs>
+<rect width="1200" height="1111" fill="#ffffff"/>
+<text x="600.0" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#111827">DVL distance to the hull: current vs proposed</text>
+<text x="300.0" y="70" text-anchor="middle" font-size="16" font-weight="700" fill="#111827" >Current  (dvl_hull_node.py)</text>
+<rect x="40" y="86" width="520" height="62" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+<text x="300.0" y="108" text-anchor="middle" font-size="14" font-weight="700" fill="#111827" >DVL message /dvl/data</text>
+<text x="300.0" y="126" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >4 beams, each with distance + valid flag</text>
+<line x1="300.0" y1="149" x2="300.0" y2="165" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="166" width="520" height="62" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+<text x="300.0" y="188" text-anchor="middle" font-size="14" font-weight="700" fill="#111827" >Keep beams 2 and 3 only</text>
+<text x="300.0" y="206" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >hardcoded use_top_beams_only = True (line 133)</text>
+<line x1="300.0" y1="229" x2="300.0" y2="245" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="246" width="520" height="62" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+<text x="300.0" y="268" text-anchor="middle" font-size="14" font-weight="700" fill="#111827" >Drop invalid beams</text>
+<text x="300.0" y="286" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >leaves 2, 1 or 0 beams, and this changes from message to message</text>
+<line x1="300.0" y1="309" x2="300.0" y2="325" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="326" width="520" height="62" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="2.2"/>
+<text x="300.0" y="348" text-anchor="middle" font-size="14" font-weight="700" fill="#7f1d1d" >Distance = mean of  d × cos 22.5°</text>
+<text x="300.0" y="366" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >assumes the ROV is square to the hull</text>
+<text x="300.0" y="382" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >(the yaw correction is passed in but has no effect)</text>
+<line x1="300.0" y1="389" x2="300.0" y2="405" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="406" width="520" height="62" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="2.2"/>
+<text x="300.0" y="428" text-anchor="middle" font-size="14" font-weight="700" fill="#7f1d1d" >No valid beam  →  distance = 0.01 m</text>
+<text x="300.0" y="446" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >controller sees 1 cm, far from the 0.8 m target</text>
+<line x1="300.0" y1="469" x2="300.0" y2="485" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="486" width="520" height="62" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="2.2"/>
+<text x="300.0" y="508" text-anchor="middle" font-size="14" font-weight="700" fill="#7f1d1d" >Jump filter: reject if > 0.5 m from last-5 mean</text>
+<text x="300.0" y="526" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >5–20 cm jumps pass straight through</text>
+<text x="300.0" y="542" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >rejected values never enter the history, so it can lock</text>
+<line x1="300.0" y1="549" x2="300.0" y2="565" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="40" y="566" width="520" height="62" rx="8" fill="#eef2ff" stroke="#4338ca" stroke-width="1.8"/>
+<text x="300.0" y="588" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81" >Guided controller</text>
+<text x="300.0" y="606" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >EMA α = 0.15, target 0.8 m, deadband 0.15 m</text>
+<text x="900.0" y="70" text-anchor="middle" font-size="16" font-weight="700" fill="#111827" >Proposed</text>
+<rect x="640" y="86" width="520" height="62" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+<text x="900.0" y="108" text-anchor="middle" font-size="14" font-weight="700" fill="#111827" >DVL message /dvl/data</text>
+<text x="900.0" y="126" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >4 beams, each with distance + valid flag</text>
+<line x1="900.0" y1="149" x2="900.0" y2="165" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="166" width="520" height="62" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+<text x="900.0" y="188" text-anchor="middle" font-size="14" font-weight="700" fill="#111827" >Keep beams 2 and 3, drop invalid</text>
+<text x="900.0" y="206" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >same beams as now; lower pair still ignored (pool floor)</text>
+<line x1="900.0" y1="229" x2="900.0" y2="245" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="246" width="520" height="62" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="900.0" y="268" text-anchor="middle" font-size="14" font-weight="700" fill="#14532d" >Both valid  →  hull angle from the two hit points</text>
+<text x="900.0" y="286" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >the line through the two hits is the hull</text>
+<text x="900.0" y="302" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >no compass needed; angle is smoothed and stored</text>
+<line x1="900.0" y1="309" x2="900.0" y2="325" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="326" width="520" height="62" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="900.0" y="348" text-anchor="middle" font-size="14" font-weight="700" fill="#14532d" >Perpendicular distance per beam:  D = d × (n · u)</text>
+<text x="900.0" y="366" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >n = hull normal, u = beam direction</text>
+<text x="900.0" y="382" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >both beams now give the same D</text>
+<line x1="900.0" y1="389" x2="900.0" y2="405" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="406" width="520" height="62" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="900.0" y="428" text-anchor="middle" font-size="14" font-weight="700" fill="#14532d" >One valid  →  use it with the last hull angle</text>
+<text x="900.0" y="446" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >none valid  →  mark distance invalid (no 0.01 m)</text>
+<line x1="900.0" y1="469" x2="900.0" y2="485" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="486" width="520" height="62" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="900.0" y="508" text-anchor="middle" font-size="14" font-weight="700" fill="#14532d" >Gate: reject if > 0.15 m from the estimate</text>
+<text x="900.0" y="526" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >accept after 3 rejections in a row, so it cannot lock</text>
+<line x1="900.0" y1="549" x2="900.0" y2="565" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="566" width="520" height="62" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="900.0" y="588" text-anchor="middle" font-size="14" font-weight="700" fill="#14532d" >Small Kalman filter (distance + rate)</text>
+<text x="900.0" y="606" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >smooth output + validity flag for the controller</text>
+<line x1="900.0" y1="629" x2="900.0" y2="645" stroke="#4b5563" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="640" y="646" width="520" height="62" rx="8" fill="#eef2ff" stroke="#4338ca" stroke-width="1.8"/>
+<text x="900.0" y="668" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81" >Guided controller</text>
+<text x="900.0" y="686" text-anchor="middle" font-size="11.5" font-weight="400" fill="#4b5563" >unchanged; holds or slows down when distance is invalid</text>
+<rect x="40" y="736" width="520" height="305" rx="10" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.2"/>
+<text x="300.0" y="758" text-anchor="middle" font-size="12.5" font-weight="700" fill="#374151" >Top view: ROV turned 15° from the hull, true standoff 0.80 m</text>
+<rect x="60" y="782" width="480" height="14" fill="url(#hatch)" stroke="none"/>
+<line x1="60" y1="796" x2="540" y2="796" stroke="#374151" stroke-width="3"/>
+<text x="530" y="776" text-anchor="end" font-size="11.5" font-weight="700" fill="#374151" >hull</text>
+<g transform="translate(240,948.0) rotate(14.999999999999998)"><rect x="-26" y="-6" width="52" height="40" rx="6" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/><circle cx="0" cy="0" r="4" fill="#111827"/></g>
+<line x1="240" y1="948.0" x2="332.5" y2="796" stroke="#2563eb" stroke-width="2"/>
+<circle cx="332.5" cy="796" r="4" fill="#2563eb"/>
+<text x="346.50813101977417" y="838" text-anchor="start" font-size="11" font-weight="700" fill="#1d4ed8" >beam 2: d = 0.97 m</text>
+<line x1="240" y1="948.0" x2="236.5" y2="796" stroke="#2563eb" stroke-width="2"/>
+<circle cx="236.5" cy="796" r="4" fill="#2563eb"/>
+<text x="226.48441301904126" y="826" text-anchor="end" font-size="11" font-weight="700" fill="#1d4ed8" >beam 3: d = 0.83 m</text>
+<line x1="240" y1="948.0" x2="281.3" y2="793.8" stroke="#b91c1c" stroke-width="1.8" stroke-dasharray="6 4"/>
+<line x1="70" y1="908" x2="100" y2="908" stroke="#b91c1c" stroke-width="1.8" stroke-dasharray="6 4"/>
+<text x="106" y="904" text-anchor="start" font-size="11" font-weight="700" fill="#b91c1c" >direction the code</text>
+<text x="106" y="918" text-anchor="start" font-size="11" font-weight="700" fill="#b91c1c" >treats as perpendicular</text>
+<text x="380" y="886" text-anchor="start" font-size="11.5" font-weight="700" fill="#374151" >Reported distance (true 0.80 m):</text>
+<text x="380" y="906" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >both beams</text>
+<text x="530" y="906" text-anchor="end" font-size="12" font-weight="700" fill="#b91c1c" >0.83 m</text>
+<text x="380" y="924" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >beam 2 only</text>
+<text x="530" y="924" text-anchor="end" font-size="12" font-weight="700" fill="#b91c1c" >0.90 m</text>
+<text x="380" y="942" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >beam 3 only</text>
+<text x="530" y="942" text-anchor="end" font-size="12" font-weight="700" fill="#b91c1c" >0.77 m</text>
+<text x="300.0" y="1027" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b91c1c" >one beam dropping out  →  about 7 cm jump, more at larger angles</text>
+<rect x="640" y="736" width="520" height="305" rx="10" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.2"/>
+<text x="900.0" y="758" text-anchor="middle" font-size="12.5" font-weight="700" fill="#374151" >Top view: ROV turned 15° from the hull, true standoff 0.80 m</text>
+<rect x="660" y="782" width="480" height="14" fill="url(#hatch)" stroke="none"/>
+<line x1="660" y1="796" x2="1140" y2="796" stroke="#374151" stroke-width="3"/>
+<text x="1130" y="776" text-anchor="end" font-size="11.5" font-weight="700" fill="#374151" >hull</text>
+<g transform="translate(840,948.0) rotate(14.999999999999998)"><rect x="-26" y="-6" width="52" height="40" rx="6" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/><circle cx="0" cy="0" r="4" fill="#111827"/></g>
+<line x1="840" y1="948.0" x2="932.5" y2="796" stroke="#2563eb" stroke-width="2"/>
+<circle cx="932.5" cy="796" r="4" fill="#2563eb"/>
+<text x="946.5081310197742" y="838" text-anchor="start" font-size="11" font-weight="700" fill="#1d4ed8" >beam 2: d = 0.97 m</text>
+<line x1="840" y1="948.0" x2="836.5" y2="796" stroke="#2563eb" stroke-width="2"/>
+<circle cx="836.5" cy="796" r="4" fill="#2563eb"/>
+<text x="826.4844130190412" y="826" text-anchor="end" font-size="11" font-weight="700" fill="#1d4ed8" >beam 3: d = 0.83 m</text>
+<line x1="840" y1="948.0" x2="840" y2="796" stroke="#15803d" stroke-width="2.4" stroke-dasharray="7 4"/>
+<path d="M840 808 h12 v-12" fill="none" stroke="#15803d" stroke-width="1.5"/>
+<text x="830" y="891" text-anchor="end" font-size="12" font-weight="700" fill="#15803d" >D = 0.80 m</text>
+<text x="980" y="886" text-anchor="start" font-size="11.5" font-weight="700" fill="#374151" >Reported distance (true 0.80 m):</text>
+<text x="980" y="906" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >both beams</text>
+<text x="1130" y="906" text-anchor="end" font-size="12" font-weight="700" fill="#15803d" >0.80 m</text>
+<text x="980" y="924" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >beam 2 only</text>
+<text x="1130" y="924" text-anchor="end" font-size="12" font-weight="700" fill="#15803d" >0.80 m</text>
+<text x="980" y="942" text-anchor="start" font-size="11.5" font-weight="400" fill="#374151" >beam 3 only</text>
+<text x="1130" y="942" text-anchor="end" font-size="12" font-weight="700" fill="#15803d" >0.80 m</text>
+<text x="900.0" y="1027" text-anchor="middle" font-size="11.5" font-weight="700" fill="#15803d" >one beam dropping out  →  no jump (uses the last hull angle)</text>
+<rect x="40" y="1067" width="36" height="20" rx="5" fill="#fef2f2" stroke="#b91c1c" stroke-width="2.2"/>
+<text x="86" y="1082" text-anchor="start" font-size="12" font-weight="400" fill="#374151" >step that causes or lets through the jumps</text>
+<rect x="640" y="1067" width="36" height="20" rx="5" fill="#f0fdf4" stroke="#15803d" stroke-width="2.2"/>
+<text x="686" y="1082" text-anchor="start" font-size="12" font-weight="400" fill="#374151" >new or changed step</text>
+</svg>
