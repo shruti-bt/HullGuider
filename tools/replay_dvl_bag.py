@@ -14,6 +14,8 @@ Outputs in --out:
 
 If the bag does not store the dvl_msgs definitions and reading fails, point
 --msg-dir at the dvl_msgs/msg folder of the driver used on the robot.
+
+For live topics instead of a bag, see tools/live_dvl_compare.py (same code).
 """
 import argparse
 import csv
@@ -139,6 +141,135 @@ def jumps(x, t, thr):
     return int(np.sum(dx[ok] > thr)), (float(np.nanmax(dx)) if ok.any() else float("nan"))
 
 
+# ----------------------------------------------------------------------------
+# Shared by this script (bag) and tools/live_dvl_compare.py (live topics)
+# ----------------------------------------------------------------------------
+class Comparison:
+    """Runs the OLD and NEW distance code side by side, one DVL message at a time."""
+
+    def __init__(self, pair=(2, 3), gate=0.15, use_velocity=True):
+        self.pair = tuple(pair)
+        self.use_velocity = use_velocity
+        self.old = OldDistance(pair=self.pair)
+        self.new = HullDistanceEstimator(beam_pair=self.pair, gate=gate)
+        self.t0 = None
+        self.prev_t = None
+        self.rows = []
+
+    def step(self, t, ranges, valid, vel=None):
+        """t in seconds, ranges/valid for the 4 beams, vel = DVL velocity or None.
+        Returns the row (dict) for this message."""
+        if self.t0 is None:
+            self.t0 = t
+        dt = 0.0 if self.prev_t is None else max(t - self.prev_t, 0.0)
+        self.prev_t = t
+        r, v = list(ranges), list(valid)
+        d_old_raw = self.old.raw(r, v)
+        d_old = self.old.update(r, v)
+        d_new, ok = self.new.update(r, v, dt, velocity=vel if self.use_velocity else None)
+        info = self.new.last
+        row = dict(
+            t=t - self.t0, r0=r[0], r1=r[1], r2=r[2], r3=r[3],
+            v0=int(v[0]), v1=int(v[1]), v2=int(v[2]), v3=int(v[3]),
+            old_raw=d_old_raw, old=d_old,
+            new_raw=info.get("raw"), new=d_new, new_valid=int(ok),
+            new_rejected=int(bool(info.get("rejected"))),
+            angle_deg=math.degrees(self.new.angle) if self.new.angle is not None else None,
+            n_top=info.get("n_beams"),
+            vel_confirmed=int(bool(info.get("velocity_confirmed"))),
+            v_toward_hull=(float(self.new.normal @ np.asarray(vel)) if vel is not None else None),
+        )
+        self.rows.append(row)
+        return row
+
+
+FIELDS = ["t", "r0", "r1", "r2", "r3", "v0", "v1", "v2", "v3", "old_raw", "old", "new_raw", "new",
+          "new_valid", "new_rejected", "angle_deg", "n_top", "vel_confirmed", "v_toward_hull"]
+
+
+def write_csv(rows, path):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _col(rows, k):
+    return np.array([float("nan") if o[k] is None else o[k] for o in rows], float)
+
+
+def print_summary(rows, jump=0.05):
+    if len(rows) < 2:
+        print("not enough DVL messages for a summary")
+        return
+    t = _col(rows, "t")
+    old_d, new_d, n_top = _col(rows, "old"), _col(rows, "new"), _col(rows, "n_top")
+    n = len(rows)
+    j_old, m_old = jumps(old_d, t, jump)
+    j_new, m_new = jumps(new_d, t, jump)
+    switches = int(np.sum(np.diff(n_top) != 0))
+    print(f"DVL messages: {n}, duration {t[-1]:.1f} s, rate {n / max(t[-1], 1e-9):.1f} Hz")
+    print(f"beams used: both top {np.mean(n_top == 2) * 100:.0f}%, one top {np.mean(n_top == 1) * 100:.0f}%, "
+          f"lower beams only {np.mean(n_top == -1) * 100:.0f}%, none {np.mean(n_top == 0) * 100:.0f}%; "
+          f"number of changes: {switches}")
+    print(f"new: sudden changes accepted at once because the DVL velocity confirmed them: "
+          f"{int(_col(rows, 'vel_confirmed').sum())}")
+    print(f"old: 0.01 m fallback used {int(np.sum(old_d == 0.01))} times")
+    print(f"steps > {jump * 100:.0f} cm between messages: old {j_old} (largest {m_old:.3f} m), "
+          f"new {j_new} (largest {m_new:.3f} m)")
+    print(f"new: rejected {int(_col(rows, 'new_rejected').sum())} readings, invalid for "
+          f"{np.mean(_col(rows, 'new_valid') == 0) * 100:.0f}% of messages")
+    ang = _col(rows, "angle_deg")
+    if np.isfinite(ang).any():
+        print(f"hull angle from the two beams: median {np.nanmedian(ang):.1f} deg, "
+              f"range {np.nanmin(ang):.1f} .. {np.nanmax(ang):.1f} deg")
+
+
+def draw(rows, pair, fig=None):
+    """Old vs new distance, hull angle and beam validity. Returns the figure."""
+    import matplotlib.pyplot as plt
+    if fig is None:
+        fig = plt.figure(figsize=(12, 8))
+    fig.clf()
+    ax = fig.subplots(3, 1, sharex=True, gridspec_kw={"height_ratios": [3, 1.2, 1]})
+    t = _col(rows, "t")
+    new_d = _col(rows, "new")
+    ax[0].plot(t, _col(rows, "old"), color="#b91c1c", lw=1.2, label="old (published)")
+    ax[0].plot(t, _col(rows, "new_raw"), ".", color="#9ca3af", ms=3, label="new, per message (before filter)")
+    ax[0].plot(t, new_d, color="#15803d", lw=1.8, label="new (published)")
+    inv = _col(rows, "new_valid") == 0
+    if inv.any():
+        ax[0].plot(t[inv], new_d[inv], "x", color="#6b7280", ms=4, label="new, marked invalid")
+    ax[0].set_ylabel("distance to hull (m)")
+    ax[0].legend(loc="upper right", fontsize=8)
+    ax[0].grid(alpha=0.3)
+    ax[1].plot(t, _col(rows, "angle_deg"), color="#2563eb", lw=1)
+    ax[1].set_ylabel("hull angle (deg)")
+    ax[1].grid(alpha=0.3)
+    for i in range(4):
+        vv = _col(rows, f"v{i}")
+        ax[2].fill_between(t, i, i + 0.8 * vv, step="post",
+                           color="#15803d" if i in pair else "#d1d5db")
+    ax[2].set_yticks([0.4, 1.4, 2.4, 3.4])
+    ax[2].set_yticklabels([f"beam {i}" for i in range(4)])
+    ax[2].set_xlabel("time (s)")
+    ax[2].set_title("beam valid (green = top beams used for distance)", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def save_plot(rows, pair, path):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+    except ImportError:
+        print("matplotlib not installed, skipping plot")
+        return
+    fig = draw(rows, pair)
+    fig.savefig(path, dpi=120)
+    print(f"wrote {path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("bag", help="ROS 2 bag folder (or ROS 1 .bag)")
@@ -153,101 +284,21 @@ def main():
     a = ap.parse_args()
 
     pair = tuple(int(i) for i in a.beams.split(","))
-    rows = read_dvl(a.bag, a.topic, a.msg_dir)
-    if not rows:
+    msgs = read_dvl(a.bag, a.topic, a.msg_dir)
+    if not msgs:
         raise SystemExit("no DVL messages read")
     os.makedirs(a.out, exist_ok=True)
 
-    old = OldDistance(pair=pair)
-    new = HullDistanceEstimator(beam_pair=pair, gate=a.gate)
-    t0 = rows[0][0]
-    prev_t = None
-    out = []
-    for t, r, v, vel in rows:
-        dt = 0.0 if prev_t is None else t - prev_t
-        prev_t = t
-        d_old_raw = old.raw(r, v)
-        d_old = old.update(r, v)
-        d_new, ok = new.update(r, v, dt, velocity=None if a.no_velocity else vel)
-        info = new.last
-        out.append(dict(
-            t=t - t0, r0=r[0], r1=r[1], r2=r[2], r3=r[3],
-            v0=int(v[0]), v1=int(v[1]), v2=int(v[2]), v3=int(v[3]),
-            old_raw=d_old_raw, old=d_old,
-            new_raw=info.get("raw"), new=d_new, new_valid=int(ok),
-            new_rejected=int(bool(info.get("rejected"))),
-            angle_deg=math.degrees(new.angle) if new.angle is not None else None,
-            n_top=info.get("n_beams"),
-            vel_confirmed=int(bool(info.get("velocity_confirmed"))),
-            v_toward_hull=(float(new.normal @ np.asarray(vel)) if vel is not None else None),
-        ))
+    cmp_ = Comparison(pair=pair, gate=a.gate, use_velocity=not a.no_velocity)
+    for t, r, v, vel in msgs:
+        cmp_.step(t, r, v, vel)
 
     csv_path = os.path.join(a.out, "replay.csv")
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(out[0].keys()))
-        w.writeheader()
-        w.writerows(out)
-
-    t = np.array([o["t"] for o in out])
-    nan = float("nan")
-    f = lambda k: np.array([nan if o[k] is None else o[k] for o in out], float)  # noqa: E731
-    old_d, new_d, n_top = f("old"), f("new"), f("n_top")
-    n = len(out)
-    j_old, m_old = jumps(old_d, t, a.jump)
-    j_new, m_new = jumps(new_d, t, a.jump)
-    switches = int(np.sum(np.diff(n_top) != 0))
-
-    print(f"DVL messages: {n}, duration {t[-1]:.1f} s, rate {n / max(t[-1], 1e-9):.1f} Hz")
-    print(f"beams used: both top {np.mean(n_top == 2) * 100:.0f}%, one top {np.mean(n_top == 1) * 100:.0f}%, "
-          f"lower beams only {np.mean(n_top == -1) * 100:.0f}%, none {np.mean(n_top == 0) * 100:.0f}%; "
-          f"number of changes: {switches}")
-    print(f"new: sudden changes accepted at once because the DVL velocity confirmed them: "
-          f"{int(f('vel_confirmed').sum())}")
-    print(f"old: 0.01 m fallback used {int(np.sum(old_d == 0.01))} times")
-    print(f"steps > {a.jump * 100:.0f} cm between messages: old {j_old} (largest {m_old:.3f} m), "
-          f"new {j_new} (largest {m_new:.3f} m)")
-    print(f"new: rejected {int(f('new_rejected').sum())} readings, invalid for "
-          f"{np.mean(f('new_valid') == 0) * 100:.0f}% of messages")
-    ang = f("angle_deg")
-    if np.isfinite(ang).any():
-        print(f"hull angle from the two beams: median {np.nanmedian(ang):.1f} deg, "
-              f"range {np.nanmin(ang):.1f} .. {np.nanmax(ang):.1f} deg")
+    write_csv(cmp_.rows, csv_path)
+    print_summary(cmp_.rows, a.jump)
     print(f"wrote {csv_path}")
-
     if not a.no_plot:
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("matplotlib not installed, skipping plot")
-            return
-        fig, ax = plt.subplots(3, 1, figsize=(12, 8), sharex=True,
-                               gridspec_kw={"height_ratios": [3, 1.2, 1]})
-        ax[0].plot(t, f("old"), color="#b91c1c", lw=1.2, label="old (published)")
-        ax[0].plot(t, f("new_raw"), ".", color="#9ca3af", ms=3, label="new, per message (before filter)")
-        ax[0].plot(t, new_d, color="#15803d", lw=1.8, label="new (published)")
-        inv = f("new_valid") == 0
-        if inv.any():
-            ax[0].plot(t[inv], new_d[inv], "x", color="#6b7280", ms=4, label="new, marked invalid")
-        ax[0].set_ylabel("distance to hull (m)")
-        ax[0].legend(loc="upper right", fontsize=8)
-        ax[0].grid(alpha=0.3)
-        ax[1].plot(t, ang, color="#2563eb", lw=1)
-        ax[1].set_ylabel("hull angle (deg)")
-        ax[1].grid(alpha=0.3)
-        for k, i in enumerate(range(4)):
-            vv = f(f"v{i}")
-            ax[2].fill_between(t, k, k + 0.8 * vv, step="post",
-                               color="#15803d" if i in pair else "#d1d5db")
-        ax[2].set_yticks([0.4, 1.4, 2.4, 3.4])
-        ax[2].set_yticklabels([f"beam {i}" for i in range(4)])
-        ax[2].set_xlabel("time (s)")
-        ax[2].set_title("beam valid (green = used for distance)", fontsize=9)
-        fig.tight_layout()
-        png = os.path.join(a.out, "replay.png")
-        fig.savefig(png, dpi=120)
-        print(f"wrote {png}")
+        save_plot(cmp_.rows, pair, os.path.join(a.out, "replay.png"))
 
 
 if __name__ == "__main__":

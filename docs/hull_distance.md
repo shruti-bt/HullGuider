@@ -70,6 +70,13 @@ It also writes:
 - `replay_out/replay.csv`, one row per DVL message
 - `replay_out/replay.png`, the old and new distance, the hull angle, and when each beam was valid
 
+**Live comparison on the topics (ROS 2):** runs the same comparison as the replay script while the DVL driver publishes, or while a bag plays. It only listens; it never commands the ROV.
+```bash
+source /opt/ros/humble/setup.bash && source ~/ros2_ws/install/setup.bash
+python3 tools/live_dvl_compare.py --out live_out [--show]
+```
+It publishes `/hull_compare` = `[old, new, valid, hull_angle_deg, beams_used]` and writes `live_out/live.csv`. On Ctrl+C it prints the summary and writes `live_out/live.png`. Tested by playing `oct3026-1` into it: the output was identical to the bag replay started from the same message.
+
 **Full node on a bag (ROS 2):**
 - The bag must contain `/dvl/data`, `/mavros/imu/data` and `/mavros/global_position/rel_alt`.
 - Do not run `guided_controller` while a real vehicle is connected.

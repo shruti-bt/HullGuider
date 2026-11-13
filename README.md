@@ -37,6 +37,19 @@ pip install rosbags numpy matplotlib
 python3 tools/replay_dvl_bag.py rosbag/oct3026-1 --out replay_out
 ```
 
+**Live, from the topics: old vs new side by side** (on the robot or in the pool while the DVL driver runs, or while a bag plays). It only listens to `/dvl/data` and never sends commands to the ROV:
+```sh
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash                       # workspace with dvl_msgs (DVL driver)
+python3 tools/live_dvl_compare.py --out live_out          # Ctrl+C to stop
+python3 tools/live_dvl_compare.py --out live_out --show   # same, with a live plot window
+```
+- Prints one line per second: old distance, new distance, valid, beams used, hull angle.
+- Publishes `/hull_compare` = `[old, new, valid, hull_angle_deg, beams_used]` for `rqt_plot` or PlotJuggler, e.g. `ros2 run rqt_plot rqt_plot /hull_compare/data[0] /hull_compare/data[1]`.
+- Saves every message to `live_out/live.csv` as it goes. On Ctrl+C it prints the same summary as the bag replay and writes `live_out/live.png`.
+- Options: `--topic`, `--beams`, `--gate`, `--no-velocity`, `--window` (seconds in the live plot), `--pub-topic ''` (do not publish).
+- If ROS 2 fails to import inside a conda environment, run it with `/usr/bin/python3` instead.
+
 **Unit tests and simulation (no ROS):**
 ```sh
 python3 -m pytest test/test_hull_distance.py -q
