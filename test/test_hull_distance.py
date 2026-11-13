@@ -82,10 +82,78 @@ def test_spike_rejected_and_no_lockout():
     assert abs(d - 0.8) < 0.02
     d, _ = est.update(ranges_for(0.8, 0.0), [True] * 4, 0.1)
     assert abs(d - 0.8) < 0.02
-    # a real step change of 0.6 m: accepted after 3 readings (old filter locks)
-    for _ in range(3):
+    # a short burst of long readings (reflection, < reset_time) is not accepted
+    for _ in range(7):
+        d, _ = est.update(ranges_for(1.4, 0.0), [True] * 4, 0.1)
+    assert abs(d - 0.8) < 0.03
+    for _ in range(5):
+        d, _ = est.update(ranges_for(0.8, 0.0), [True] * 4, 0.1)
+    # a real step change of 0.6 m that lasts: accepted after reset_time (old filter locks)
+    for _ in range(17):
         d, _ = est.update(ranges_for(1.4, 0.0), [True] * 4, 0.1)
     assert abs(d - 1.4) < 0.02
+
+
+def test_disagreeing_beams_use_the_consistent_one():
+    est = HullDistanceEstimator()
+    for _ in range(10):
+        est.update(ranges_for(0.45, 0.0), [True] * 4, 0.2)
+    r = ranges_for(0.45, 0.0)
+    r[2] = 2.0                       # beam 2 hits something far (seen at 86.7 s in oct3026-1)
+    d, ok = est.update(r, [True] * 4, 0.2)
+    assert est.last["n_beams"] == 1 and abs(d - 0.45) < 0.01
+
+
+def test_lower_beams_used_when_top_beams_lost():
+    est = HullDistanceEstimator()
+    r = ranges_for(0.8, 15.0)
+    est.update(r, [True] * 4, 0.2)                    # learns the hull angle
+    d, ok = est.update(r, [True, True, False, False], 0.2)
+    assert est.last["n_beams"] == -1 and ok and abs(d - 0.8) < 0.01
+    z, nb = est.measure(r, [False, True, False, False])
+    assert nb == -1 and abs(z - 0.8) < 1e-9
+
+
+def test_range_limit_is_no_hull():
+    est = HullDistanceEstimator()
+    z, nb = est.measure([2.95] * 4, [True] * 4)       # DVL range limit (bag 5)
+    assert z is None and nb == 0
+
+
+def test_timeout_covers_dropouts_seen_in_bags():
+    est = HullDistanceEstimator()                     # default timeout 3 s
+    est.update(ranges_for(0.8, 0.0), [True] * 4, 0.2)
+    for _ in range(13):                                # 2.6 s, longest gap in the bags
+        d, ok = est.update([0.0] * 4, [False] * 4, 0.2)
+    assert ok and abs(d - 0.8) < 0.02
+    for _ in range(3):
+        d, ok = est.update([0.0] * 4, [False] * 4, 0.2)
+    assert not ok
+
+
+def test_velocity_confirms_a_real_jump_at_once():
+    def run(with_velocity):
+        est = HullDistanceEstimator()
+        for _ in range(10):
+            est.update(ranges_for(0.8, 0.0), [True] * 4, 0.2, velocity=[0, 0, 0])
+        away = [0.0, 0.0, -0.3]                       # 0.3 m/s away from the hull
+        for _ in range(5):                            # 1 s with no usable beam
+            est.update([0.0] * 4, [False] * 4, 0.2, velocity=away if with_velocity else None)
+        d, _ = est.update(ranges_for(1.1, 0.0), [True] * 4, 0.2,
+                          velocity=away if with_velocity else None)
+        return d, est
+    d, est = run(True)
+    assert est.last["velocity_confirmed"] and abs(d - 1.1) < 0.01
+    d, est = run(False)                               # no velocity: rejected, waits reset_time
+    assert est.last["rejected"] and abs(d - 0.8) < 0.05
+
+
+def test_velocity_does_not_accept_a_reflection():
+    est = HullDistanceEstimator()
+    for _ in range(10):
+        est.update(ranges_for(0.8, 0.0), [True] * 4, 0.2, velocity=[0, 0, 0])
+    d, _ = est.update(ranges_for(1.4, 0.0), [True] * 4, 0.2, velocity=[0, 0, 0])
+    assert est.last["rejected"] and abs(d - 0.8) < 0.02
 
 
 def test_simulated_run_with_dropouts():

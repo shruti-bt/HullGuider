@@ -55,7 +55,15 @@ class DVLGuidedController(Node):
 
         self.distance_threshold = 0.8 # TODO replace with dynamic parameter or ros parameter. The target distance. (there should be a range)
 
-        self.distance_deadband = 0.15 # meter
+        self.distance_deadband = 0.05 # meter (was 0.15: the ROV stopped correcting up to 15 cm off)
+
+        # Integral term on the distance error: removes the steady offset left by a
+        # steady current or by the deadband. Clamped so it cannot wind up.
+        self.k_i = 0.01               # (m/s) per (m*s)  NOTE tune (simulation: 0.01 gives the smallest swing)
+        self.i_max = 0.1              # m/s, largest push from the integral term (k_d also opposes a steady command, so it needs ~1.8x the current)
+        self.i_zone = 0.3             # m, integrate only when this close to the target
+        self.dist_integral = 0.0
+        self.control_dt = 0.05        # s, control_loop timer period (20 Hz)
 
         self.tangent_dampen_factor = 0.3 # 30% of planned speed
         self.too_far_distance = 0.8 # meters beyond target 
@@ -424,8 +432,14 @@ class DVLGuidedController(Node):
         k_p = k_dist          # keep your existing gain
         k_d = 0.8             # damping gain (tune: 0.3–1.2)
 
-        # --- PD control ---
-        v_normal_mag = -k_p * scaled_error - k_d * v_prev_n
+        # --- integral (only near the target, clamped, frozen while the distance is invalid) ---
+        if abs(error) < self.i_zone:
+            self.dist_integral += error * self.control_dt
+        lim = self.i_max / self.k_i
+        self.dist_integral = float(np.clip(self.dist_integral, -lim, lim))
+
+        # --- PID control ---
+        v_normal_mag = -k_p * scaled_error - self.k_i * self.dist_integral - k_d * v_prev_n
 
         v_normal = v_normal_mag * n
         

@@ -27,7 +27,9 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hull_guider", "core"))
 from hull_distance import HullDistanceEstimator, default_beam_dirs  # noqa: E402
 
-# Water Linked dvl-a50-ros2 driver definitions, used only as a fallback.
+# Fallback definitions, used when --msg-dir is not given. The layout was decoded
+# from the bytes of the oct3026 bags (dvl_msgs driver on the robot). The two
+# fields named unknown_* were always 0 there; their real names are not known.
 FALLBACK_MSGS = {
     "dvl_msgs/msg/DVLBeam": """
 int64 id
@@ -42,11 +44,13 @@ std_msgs/Header header
 float64 time
 geometry_msgs/Vector3 velocity
 float64 fom
-float64[9] covariance
+float64 unknown_a
 float64 altitude
 dvl_msgs/DVLBeam[] beams
 bool velocity_valid
 int64 status
+float64 unknown_b
+float64 unknown_c
 string form
 """,
 }
@@ -118,9 +122,13 @@ def read_dvl(bag, topic, msg_dir):
             beams = list(msg.beams)
             if len(beams) < 4:
                 continue
+            vel = None
+            if getattr(msg, "velocity_valid", False):
+                vel = [float(msg.velocity.x), float(msg.velocity.y), float(msg.velocity.z)]
             rows.append((t_ns * 1e-9,
                          [float(b.distance) for b in beams[:4]],
-                         [bool(b.valid) for b in beams[:4]]))
+                         [bool(b.valid) for b in beams[:4]],
+                         vel))
     return rows
 
 
@@ -140,6 +148,7 @@ def main():
     ap.add_argument("--beams", default="2,3", help="0-based top beam indices")
     ap.add_argument("--gate", type=float, default=0.15)
     ap.add_argument("--jump", type=float, default=0.05, help="step size counted as a jump (m)")
+    ap.add_argument("--no-velocity", action="store_true", help="do not pass the DVL velocity to the new method")
     ap.add_argument("--no-plot", action="store_true")
     a = ap.parse_args()
 
@@ -154,12 +163,12 @@ def main():
     t0 = rows[0][0]
     prev_t = None
     out = []
-    for t, r, v in rows:
+    for t, r, v, vel in rows:
         dt = 0.0 if prev_t is None else t - prev_t
         prev_t = t
         d_old_raw = old.raw(r, v)
         d_old = old.update(r, v)
-        d_new, ok = new.update(r, v, dt)
+        d_new, ok = new.update(r, v, dt, velocity=None if a.no_velocity else vel)
         info = new.last
         out.append(dict(
             t=t - t0, r0=r[0], r1=r[1], r2=r[2], r3=r[3],
@@ -169,6 +178,8 @@ def main():
             new_rejected=int(bool(info.get("rejected"))),
             angle_deg=math.degrees(new.angle) if new.angle is not None else None,
             n_top=info.get("n_beams"),
+            vel_confirmed=int(bool(info.get("velocity_confirmed"))),
+            v_toward_hull=(float(new.normal @ np.asarray(vel)) if vel is not None else None),
         ))
 
     csv_path = os.path.join(a.out, "replay.csv")
@@ -187,8 +198,11 @@ def main():
     switches = int(np.sum(np.diff(n_top) != 0))
 
     print(f"DVL messages: {n}, duration {t[-1]:.1f} s, rate {n / max(t[-1], 1e-9):.1f} Hz")
-    print(f"top beams valid: both {np.mean(n_top == 2) * 100:.0f}%, one {np.mean(n_top == 1) * 100:.0f}%, "
-          f"none {np.mean(n_top == 0) * 100:.0f}%; number of changes: {switches}")
+    print(f"beams used: both top {np.mean(n_top == 2) * 100:.0f}%, one top {np.mean(n_top == 1) * 100:.0f}%, "
+          f"lower beams only {np.mean(n_top == -1) * 100:.0f}%, none {np.mean(n_top == 0) * 100:.0f}%; "
+          f"number of changes: {switches}")
+    print(f"new: sudden changes accepted at once because the DVL velocity confirmed them: "
+          f"{int(f('vel_confirmed').sum())}")
     print(f"old: 0.01 m fallback used {int(np.sum(old_d == 0.01))} times")
     print(f"steps > {a.jump * 100:.0f} cm between messages: old {j_old} (largest {m_old:.3f} m), "
           f"new {j_new} (largest {m_new:.3f} m)")

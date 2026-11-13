@@ -142,7 +142,9 @@ class DVLHullEstimator(Node):
             beam_pair=tuple(self.top_beam_indices),
             gate=0.15,          # m, NOTE tune
             max_rejects=3,      # accept a persistent change after this many rejections
-            timeout=1.0,        # s without a beam -> distance marked invalid
+            timeout=3.0,        # s without a beam -> distance marked invalid (bags: longest gap 2.6 s)
+            backup_beams=(0, 1),  # lower beams, used only when both top beams are lost
+            max_range=2.9,      # m, readings at the DVL range limit (~3 m) mean "no hull"
         )
         self.distance_valid = False
         self.last_dist_time = None
@@ -386,8 +388,12 @@ class DVLHullEstimator(Node):
         now = self.get_clock().now()
         dt = 0.0 if self.last_dist_time is None else (now - self.last_dist_time).nanoseconds * 1e-9
         self.last_dist_time = now
+        # DVL velocity (DVL frame), only used to confirm a sudden distance change
+        vel = None
+        if getattr(msg, "velocity_valid", False):
+            vel = [msg.velocity.x, msg.velocity.y, msg.velocity.z]
         dist, self.distance_valid = self.hull_dist.update(
-            [b.distance for b in beams], [bool(b.valid) for b in beams], dt)
+            [b.distance for b in beams], [bool(b.valid) for b in beams], dt, velocity=vel)
 
         info = self.hull_dist.last
         raw = info.get("raw")
@@ -395,7 +401,8 @@ class DVLHullEstimator(Node):
             f"hull dist: raw={raw if raw is None else round(raw, 3)} "
             f"beams={info.get('n_beams')} "
             f"angle={np.degrees(self.hull_dist.angle or 0.0):.1f}deg "
-            f"rejected={info.get('rejected')} valid={self.distance_valid}")
+            f"rejected={info.get('rejected')} vel_confirmed={info.get('velocity_confirmed')} "
+            f"valid={self.distance_valid}")
 
         # No 0.01 m fallback: before the first valid beam there is no distance at all
         if dist is None:
